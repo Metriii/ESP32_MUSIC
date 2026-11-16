@@ -1,22 +1,18 @@
 # ESP32 Music Player
 
-A ESP32 cria sua própria rede Wi-Fi e hospeda uma página web para escolher e parar padrões rítmicos tocados em um buzzer ativo. Tudo roda na ESP32, sem internet ou servidor externo.
+Uma ESP32 toca ritmos em 3 buzzers passivos. Uma página no computador mostra as músicas e tem os botões **Começar** e **Pausar**. Não usa Wi-Fi, internet nem rede: a página fala com a placa pelo cabo USB.
 
 ## Estrutura
 ```text
-frontend/   index.html, style.css, app.js
-src/        main.cpp (firmware ESP32)
+frontend/index.html   interface (abre no PC, não vai para a placa)
+musicas/*.txt         uma música por arquivo (gravadas na placa com uploadfs)
+src/main.cpp          firmware: lê as músicas, toca os buzzers e recebe comandos pelo USB
 platformio.ini
 ```
-A pasta `frontend/` é gravada no LittleFS da ESP32 (`pio run -t uploadfs`) e servida pelo firmware; mudar a interface não exige recompilar. Para visualizar a interface sem a ESP32, abra `frontend/index.html` no navegador (sem a placa, a lista de músicas fica vazia).
 
-## Componentes
-- ESP32 DevKit
-- 3 buzzers ativos (2 pinos)
-- (Opcional) transistor NPN + resistor de base ~1 kΩ, se o buzzer exigir mais corrente que o GPIO fornece (~12 mA recomendado)
-
-## Ligações
-3 buzzers ativos de 2 pinos, cada um em seu GPIO (sem transistor). Os três tocam o mesmo padrão ao mesmo tempo.
+## Componentes e ligações
+- ESP32 DevKit + cabo USB de dados
+- 3 buzzers passivos de 2 pinos
 
 | Buzzer | + (sinal) | − |
 |---|---|---|
@@ -24,66 +20,38 @@ A pasta `frontend/` é gravada no LittleFS da ESP32 (`pio run -t uploadfs`) e se
 | 2 | GPIO 19 | GND |
 | 3 | GPIO 21 | GND |
 
-Os três − podem dividir o mesmo GND. Cada GPIO alimenta só um buzzer; se algum consumir mais de ~20 mA, use um transistor NPN + resistor de ~1 kΩ naquele canal.
+Os três tocam o mesmo padrão. Se algum buzzer consumir mais de ~20 mA, use um transistor NPN + resistor de ~1 kΩ naquele canal. Para mudar a altura do som, altere `TONE_HZ` em `src/main.cpp`.
 
-Se o módulo for ativo em LOW, altere `BUZZER_ON` em `src/main.cpp`.
+## Como usar
+1. Envie o firmware: `pio run -t upload`.
+2. Envie as músicas: `pio run -t uploadfs` (no VS Code: PlatformIO → esp32dev → Platform → **Upload Filesystem Image**).
+3. **Feche o Serial Monitor**, se estiver aberto (só um programa pode usar a porta USB por vez).
+4. Abra `frontend/index.html` no **Chrome ou Edge** do computador (dois cliques no arquivo).
+5. Clique em **Conectar ESP32** e escolha a porta da placa (ex.: `COM3`).
+6. Clique em uma música e use **Começar** e **Pausar**. Pausar e Começar de novo continua de onde parou; escolher outra música começa ela do início.
 
-## PlatformIO
-```ini
-[env:esp32dev]
-platform = espressif32
-board = esp32dev
-framework = arduino
-monitor_speed = 115200
-upload_speed = 115200
-```
+Não funciona no celular nem no Firefox/Safari, que não têm Web Serial.
 
-## Compilar e enviar
+## Comandos PlatformIO
 ```bash
-pio run                # compilar o firmware
+pio run                # compilar
 pio run -t upload      # enviar o firmware
-pio run -t uploadfs    # enviar o frontend (pasta frontend/) ao LittleFS
-pio device monitor   # Serial Monitor
+pio run -t uploadfs    # enviar as músicas (pasta musicas/)
+pio device monitor     # Serial Monitor (115200)
 ```
 
-> Rode os **dois** uploads na primeira vez. `uploadfs` regrava a partição de arquivos e **apaga as músicas enviadas por você** (as 4 padrão são recriadas ao ligar). Sem o `uploadfs`, a página mostra "Frontend ausente".
-
-## Rede Wi-Fi do celular (opcional)
-Copie `src/secrets.example.h` para `src/secrets.h` e preencha `STA_SSID`/`STA_PASS`. A ESP32 tenta essa rede (2,4 GHz) por 15 s; se falhar, cria o AP `ESP32-Music-Player`. O `secrets.h` não vai para o Git.
-
-## Acesso
-- SSID: `ESP32-Music-Player`
-- Senha: `esp32music`
-- URL: http://192.168.4.1 (porta 80)
-
-## Rotas HTTP
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/` | Interface web |
-| GET | `/play?id=mario` | Inicia música (400 sem `id`, 404 se inexistente) |
-| GET | `/stop` | Para a reprodução |
-| GET | `/status` | Estado atual |
-| GET | `/songs` | Lista as músicas salvas |
-| POST | `/upload?id=x&name=Nome` | Envia música (corpo `text/plain`) |
-| GET | `/delete?id=x` | Apaga música |
-
-Respostas: `{"playing":true,"id":"mario","name":"Super Mario"}` ou `{"playing":false}`.
-
-Músicas padrão: `mario`, `harry`, `pirates`, `fur` (gravadas no LittleFS na primeira execução).
-
-## Adicionar uma música (upload)
-Na página, em **Enviar música**, escolha um arquivo `.txt` e clique em Enviar. O nome do arquivo (minúsculo, sem acentos, até 16 caracteres) vira o id. Enviar com o mesmo id substitui a música; o botão × apaga.
-
-Formato do arquivo:
+## Adicionar uma música
+Crie um arquivo `.txt` em `musicas/`. O nome do arquivo vira o nome da música (ex.: `Tetris.txt` → "Tetris"). Dentro, as durações em ms separadas por vírgula: som, pausa, som, pausa...
 ```text
-# Minha Musica
-120,60,120,120,240,240,240,480
+120,60,120,120,240,480
 ```
-- 1ª linha opcional com `# Nome`.
-- Durações em ms separadas por vírgula, espaço ou linha: som, pausa, som, pausa...
-- Quantidade **par**, cada valor entre 10 e 10000 ms, até 512 valores, arquivo até 4 KB, até 20 músicas.
+- Quantidade **par** (se for ímpar, o último valor é ignorado), até 512 valores, até 20 músicas.
+- A lista aparece em ordem alfabética.
 
-Os arquivos ficam em `/songs/` no LittleFS e sobrevivem a reinicializações e a novos uploads do firmware (`upload`), mas são apagados por `uploadfs`.
+Depois rode `pio run -t uploadfs` (não precisa regravar o firmware). A página pega a lista da placa sozinha.
+
+## Testar sem a página
+No Serial Monitor, digite `L` (lista), `T0` (toca a música 0) ou `P` (pausa).
 
 ## Limitações
-O buzzer ativo tem frequência interna fixa: só é possível variar duração de sons e pausas, não notas. Os padrões são ritmos inspirados nas músicas, **não** reproduções fiéis. Compilar não prova que o buzzer funciona; é necessário testar no hardware.
+Todas as músicas usam o mesmo tom (`TONE_HZ`): só variam a duração de sons e pausas. Os padrões são ritmos inspirados nas músicas, **não** reproduções fiéis. Compilar não prova que o buzzer funciona; é preciso testar na placa.

@@ -1,364 +1,95 @@
 # AGENTS.md — ESP32 Music Player
 
-## 1. Contexto do projeto
+## 1. Contexto
 
-O ESP32 Music Player é um projeto simples que transforma uma ESP32 em um pequeno servidor web para controlar a reprodução de músicas por meio de um buzzer ativo.
+Uma ESP32 toca padrões rítmicos em buzzers passivos. Uma página web simples, aberta no computador, mostra as músicas e permite **Começar** e **Pausar**.
 
-A ESP32 hospedará sua própria página web. O usuário poderá acessar a interface pelo celular ou computador, selecionar uma música e controlar sua reprodução.
+**Não há Wi-Fi, internet nem rede de nenhum tipo.** A página conversa com a ESP32 pelo cabo USB, usando a Web Serial API do navegador.
 
-Toda a aplicação deverá funcionar diretamente na ESP32, sem servidores externos.
+Prioridade: simplicidade. Não acrescentar recursos que não foram pedidos.
 
-## 2. Tecnologias obrigatórias
+## 2. Tecnologias
 
-- C++.
-- PlatformIO.
-- Arduino Framework.
-- ESP32 DevKit.
-- WiFi.h.
-- WebServer.h.
-- HTML5.
-- CSS3.
-- JavaScript puro.
+- C++, PlatformIO, Arduino Framework, ESP32 DevKit.
+- HTML, CSS e JavaScript puro em um único arquivo.
+- Web Serial API (Chrome ou Edge no computador; não funciona em celular nem no Firefox/Safari).
 
-Não utilizar React, Angular, Vue, Node.js ou frameworks frontend.
-
-Não adicionar bibliotecas externas sem necessidade técnica justificada.
+Não usar Wi-Fi, servidor HTTP, bibliotecas externas, frameworks ou CDNs. O LittleFS (nativo) guarda só os arquivos de música.
 
 ## 3. Hardware
 
-O projeto utiliza:
+- ESP32 DevKit ligada ao PC por cabo USB (dados, não só carga).
+- 3 buzzers passivos de 2 pinos: GPIO 18, 19 e 21 (+) e GND (−). Os três tocam o mesmo padrão.
+- Buzzer passivo precisa de PWM: os 3 pinos ficam no mesmo canal LEDC (`ledcWriteTone`), com o tom em `TONE_HZ`.
 
-- ESP32 DevKit.
-- Buzzer ativo.
-- GPIO 18 para acionamento do buzzer.
-- GND para aterramento.
+Por enquanto todas as músicas usam um tom fixo; só a duração de sons e pausas varia. Não trocar o componente sem autorização.
 
-O buzzer é ativo e possui frequência interna. Portanto, não é possível reproduzir melodias com notas musicais variadas como em um buzzer passivo.
+## 4. Músicas
 
-A primeira versão deverá trabalhar com padrões rítmicos de sons e pausas.
+Uma música por arquivo em `musicas/<Nome>.txt` (o `data_dir` do PlatformIO), gravados na placa com `pio run -t uploadfs`. O nome do arquivo é o nome da música; o conteúdo são durações em ms separadas por vírgula: índice par = som, índice ímpar = silêncio, quantidade par (ímpar descarta o último), até 512 valores e 20 músicas. A lista é lida na inicialização e ordenada alfabeticamente; a música é carregada do arquivo ao tocar. O `main.cpp` não leva comentários `//`.
 
-Não substituir o buzzer ativo por outro componente sem autorização.
-
-Verificar a necessidade de transistor conforme a corrente exigida pelo buzzer.
-
-## 4. Arquitetura
-
-A ESP32 será responsável por todas as funcionalidades:
-
-1. Criar uma rede Wi-Fi própria.
-2. Hospedar o servidor HTTP.
-3. Disponibilizar a interface web.
-4. Receber os comandos enviados pelo frontend.
-5. Identificar a música selecionada.
-6. Controlar o buzzer.
-7. Gerenciar o estado da reprodução.
-
-### Configuração Wi-Fi
-
-- SSID: `ESP32-Music-Player`
-- Senha: `esp32music`
-- IP: `192.168.4.1`
-- Porta: `80`
-
-Utilizar Wi-Fi Access Point para permitir acesso direto à ESP32, sem depender de roteador ou internet.
-
-## 5. Frontend — prioridade para leveza
-
-Esta é uma das principais regras do projeto.
-
-A ESP32 possui recursos limitados. Portanto, o frontend deverá ser extremamente leve.
-
-### Tecnologias
-
-Utilizar exclusivamente:
-
-- HTML.
-- CSS.
-- JavaScript puro.
-
-### Restrições
-
-Não utilizar:
-
-- React, Angular ou Vue.
-- Bootstrap ou Tailwind.
-- jQuery.
-- Bibliotecas de animação.
-- Font Awesome ou bibliotecas de ícones.
-- Google Fonts.
-- Imagens externas.
-- Scripts externos.
-- CDNs.
-- Animações pesadas.
-- Efeitos de blur ou backdrop-filter.
-- Componentes visuais desnecessários.
-
-### Design
-
-Criar uma interface minimalista e responsiva.
-
-Características:
-
-- Tema escuro.
-- Fundo em azul-marinho ou cinza escuro.
-- Detalhes em azul.
-- Cards simples.
-- Botões intuitivos.
-- Tipografia padrão do sistema.
-- Layout centralizado.
-- Boa visualização em celulares.
-
-### Elementos obrigatórios
-
-1. Cabeçalho com o nome ESP32 PLAYER.
-2. Indicador de conexão.
-3. Lista de músicas.
-4. Botão de reprodução para cada música.
-5. Identificação da música atual.
-6. Botão para parar a reprodução.
-
-Não implementar recursos visuais sem utilidade funcional.
-
-### Armazenamento do frontend
-
-O frontend fica em arquivos separados na pasta `frontend/` (`index.html`, `style.css`, `app.js`) e é gravado no LittleFS da ESP32 com `pio run -t uploadfs` (`data_dir = frontend` no `platformio.ini`). O firmware serve esses arquivos com `server.streamFile()` nas rotas `/`, `/style.css` e `/app.js`.
-
-O mesmo LittleFS (nativo do framework) guarda as músicas em `/songs/`. Não utilizar SPIFFS.
-
-Atenção: `uploadfs` regrava a partição inteira e apaga as músicas enviadas pelo usuário; as 4 músicas padrão são recriadas na próxima inicialização.
-
-O frontend deverá funcionar completamente offline.
-
-## 6. Biblioteca musical
-
-Criar inicialmente quatro opções:
-
-| ID | Música |
+| Nº | Música |
 |---|---|
-| mario | Super Mario |
-| harry | Harry Potter |
-| pirates | Piratas do Caribe |
-| fur | Fur Elise |
+| 0 | Fur Elise |
+| 1 | Harry Potter |
+| 2 | Piratas do Caribe |
+| 3 | Super Mario |
 
-As músicas ficam em `/songs/<id>.txt` no LittleFS: 1ª linha opcional `# Nome`, depois durações em ms (som,pausa,som,pausa...), quantidade par, 10–10000 ms, até 512 intervalos e 4 KB por arquivo, até 20 músicas. As quatro músicas padrão são gravadas no LittleFS na primeira execução. O usuário pode enviar e apagar músicas pela página.
+Os padrões são ritmos inspirados nas músicas, não reproduções fiéis. Ao terminar, a música recomeça em loop.
 
-Cada música deverá possuir:
+## 5. Protocolo Serial (115200 baud, uma linha por mensagem)
 
-- Identificador único.
-- Nome.
-- Sequência de durações.
-- Quantidade de intervalos.
-
-Organizar os dados de maneira que novas músicas possam ser adicionadas facilmente.
-
-Os padrões deverão alternar entre som ligado e silêncio.
-
-Não apresentar os padrões sonoros como reprodução fiel das trilhas originais.
-
-## 7. Controle do buzzer
-
-Utilizar GPIO 18.
-
-O acionamento deverá ser feito por nível lógico, considerando a polaridade do módulo.
-
-- HIGH: ligado, quando compatível com o módulo.
-- LOW: desligado, quando compatível com o módulo.
-
-Implementar uma função responsável por iniciar a reprodução e outra por interrompê-la.
-
-### Reprodução não bloqueante
-
-Requisito obrigatório: não utilizar `delay()` para controlar as músicas.
-
-Utilizar:
-
-- `millis()`.
-- Índice do intervalo atual.
-- Tempo de início do intervalo.
-- Estado do buzzer.
-- Estado da reprodução.
-
-O controle deverá ocorrer continuamente no `loop()`.
-
-A ESP32 deverá continuar atendendo às requisições HTTP durante a reprodução.
-
-### Comportamentos esperados
-
-- Selecionar uma nova música interrompe a anterior.
-- A nova música começa imediatamente.
-- O botão parar desliga o buzzer.
-- Ao terminar a sequência, a música reinicia em loop.
-- O estado do player deve permanecer sincronizado com a interface.
-
-## 8. API HTTP
-
-Implementar as seguintes rotas:
-
-| Método | Endpoint | Responsabilidade |
+| Direção | Mensagem | Significado |
 |---|---|---|
-| GET | `/` | Servir o frontend |
-| GET | `/play?id=mario` | Iniciar uma música |
-| GET | `/stop` | Interromper a música |
-| GET | `/status` | Consultar estado atual |
-| GET | `/songs` | Listar músicas (`[{"id","name"}]`) |
-| POST | `/upload?id=x&name=Nome` | Enviar música (corpo text/plain; 400 formato inválido, 413 grande demais, 409 limite) |
-| GET | `/delete?id=x` | Apagar música |
+| PC → ESP32 | `L` | Pede a lista de músicas |
+| PC → ESP32 | `T<n>` | Toca a música `n`; se ela estiver pausada, continua de onde parou; outra música começa do início |
+| PC → ESP32 | `P` | Pausa (desliga os buzzers e guarda a posição) |
+| ESP32 → PC | `M<n>:<nome>` | Uma música da lista |
+| ESP32 → PC | `S:tocando:<n>`, `S:pausado:<n>`, `S:parado` | Estado atual, enviado após cada comando |
 
-### Resposta de reprodução
+A ESP32 envia a lista e o estado ao ligar e após `L`. Linhas desconhecidas são ignoradas dos dois lados.
 
-```json
-{
-  "playing": true,
-  "id": "mario",
-  "name": "Super Mario"
-}
-```
+## 6. Firmware
 
-### Resposta de interrupção
+- Reprodução não bloqueante: `millis()` em `updatePlayer()`, sem `delay()`.
+- Leitura do Serial sem bloquear.
+- Funções separadas: tocar, pausar, atualizar o player, ler comandos.
 
-```json
-{
-  "playing": false
-}
-```
+## 7. Interface (`frontend/index.html`)
 
-### Regras
+- Botão **Conectar ESP32**, lista de músicas (clique seleciona), **Começar**, **Pausar** e o texto de estado.
+- Tema escuro, fonte do sistema, sem recursos externos.
+- Nomes inseridos com `textContent`.
+- Mostrar mensagem clara se o navegador não tiver Web Serial ou se a porta estiver ocupada.
 
-- Validar os parâmetros recebidos.
-- Retornar HTTP 400 quando o ID estiver ausente.
-- Retornar HTTP 404 para músicas inexistentes.
-- Retornar JSON válido.
-- Evitar respostas desnecessariamente grandes.
-- Não confiar em parâmetros enviados pelo frontend sem validação.
-
-## 9. Comunicação frontend e firmware
-
-O JavaScript deverá utilizar `fetch()` nativo.
-
-Ao selecionar uma música:
-
-1. Enviar GET para `/play?id=IDENTIFICADOR`.
-2. Verificar a resposta HTTP.
-3. Atualizar a música atual.
-4. Destacar o card selecionado.
-
-Ao interromper:
-
-1. Enviar GET para `/stop`.
-2. Atualizar a interface.
-3. Remover o destaque da música.
-
-Consultar `/status` a cada 2 segundos para sincronizar o estado.
-
-Tratar falhas de conexão sem travar a página.
-
-## 10. Organização do código
-
-Manter uma estrutura simples:
+## 8. Estrutura
 
 ```text
 ESP32-Music-Player/
-│
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── README.md
 ├── platformio.ini
-│
-├── frontend/           (gravado no LittleFS com `pio run -t uploadfs`)
-│   ├── index.html
-│   ├── style.css
-│   └── app.js
-│
+├── musicas/        (um .txt por música, vai para o LittleFS com uploadfs)
+├── frontend/
+│   └── index.html   (aberto no PC, não vai para a placa)
 └── src/
-    └── main.cpp        (firmware ESP32: Wi-Fi, rotas HTTP, músicas, buzzer)
+    └── main.cpp     (lê as músicas, buzzers, comandos Serial)
 ```
 
-O frontend é editado em `frontend/` (HTML, CSS e JS separados) e enviado à placa com `pio run -t uploadfs`; mudar a interface não exige recompilar o firmware.
+## 9. Regras de desenvolvimento
 
-Separar as responsabilidades por funções, evitando colocar toda a lógica dentro de `setup()` e `loop()`.
+1. Inspecionar os arquivos antes de alterar.
+2. Não adicionar dependências.
+3. Não modificar o hardware sem autorização.
+4. Mudou o protocolo, mude o firmware e a página juntos.
+5. Não afirmar que o hardware foi testado sem acesso físico; compilar não prova que o buzzer funciona.
 
-Não criar uma arquitetura excessivamente complexa para este projeto.
+## 10. Testes manuais
 
-## 11. Regras de desenvolvimento
-
-1. Inspecionar os arquivos existentes antes de qualquer alteração.
-2. Preservar configurações úteis.
-3. Não apagar arquivos sem necessidade.
-4. Não adicionar dependências desnecessárias.
-5. Não modificar o hardware sem autorização.
-6. Não introduzir frameworks frontend.
-7. Priorizar legibilidade e simplicidade.
-8. Evitar consumo desnecessário de RAM.
-9. Armazenar conteúdo estático na flash sempre que possível.
-10. Não utilizar operações bloqueantes durante a reprodução.
-11. Não afirmar que o hardware foi testado sem acesso físico.
-12. Não considerar a compilação como prova de funcionamento do buzzer.
-
-Antes de alterar qualquer configuração, verificar a compatibilidade com a placa ESP32 utilizada.
-
-## 12. Configuração PlatformIO
-
-Utilizar como configuração inicial:
-
-```ini
-[env:esp32dev]
-platform = espressif32
-board = esp32dev
-framework = arduino
-
-monitor_speed = 115200
-upload_speed = 115200
-```
-
-Utilizar bibliotecas nativas do framework sempre que possível.
-
-## 13. Testes obrigatórios
-
-Após a implementação, verificar:
-
-- [ ] Projeto compila corretamente.
-- [ ] Firmware pode ser enviado à ESP32.
-- [ ] Rede Wi-Fi é criada.
-- [ ] IP correto é apresentado no Serial Monitor.
-- [ ] Página web abre no navegador.
-- [ ] Interface funciona em celular.
-- [ ] As quatro músicas aparecem.
-- [ ] Cada música envia o identificador correto.
-- [ ] Buzzer emite os padrões sonoros.
-- [ ] É possível trocar de música durante a reprodução.
-- [ ] Botão parar interrompe o som.
-- [ ] Endpoint `/status` retorna informações corretas.
-- [ ] Servidor continua respondendo durante a reprodução.
-- [ ] Não existem dependências externas para carregar a página.
-
-## 14. Documentação
-
-Criar ou atualizar o README.md com:
-
-- Descrição do projeto.
-- Componentes utilizados.
-- Ligações elétricas.
-- Configuração do PlatformIO.
-- Como compilar.
-- Como realizar upload.
-- Configuração da rede Wi-Fi.
-- Endereço de acesso.
-- Rotas HTTP.
-- Como adicionar novas músicas.
-- Limitações do buzzer ativo.
-
-## 15. Objetivo final
-
-Entregar um ESP32 Music Player funcional, leve e simples.
-
-A aplicação deverá permitir que qualquer dispositivo conectado à rede Wi-Fi da ESP32 acesse uma página web e controle o buzzer.
-
-A prioridade máxima é:
-
-1. Funcionamento correto.
-2. Baixo consumo de memória.
-3. Interface leve.
-4. Comunicação confiável.
-5. Facilidade de manutenção e expansão.
-
-Não complicar o projeto com tecnologias que não agreguem valor real à solução.
+- [ ] `pio run` compila e `pio run -t upload` envia.
+- [ ] A página conecta e lista as 4 músicas.
+- [ ] Começar toca a música selecionada nos 3 buzzers.
+- [ ] Pausar silencia; Começar continua do mesmo ponto.
+- [ ] Escolher outra música e Começar troca e começa do início.
+- [ ] Desconectar o cabo mostra "Desconectado" sem travar a página.

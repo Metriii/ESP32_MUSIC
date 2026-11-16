@@ -1,42 +1,118 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
-
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ESP32 PLAYER</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 Player</title>
+<style>
+  body { margin: 0; background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; }
+  main { max-width: 420px; margin: 0 auto; padding: 24px 16px; }
+  h1 { margin: 0 0 16px; font-size: 1.4rem; color: #60a5fa; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 10px 16px; cursor: pointer;
+           background: #2563eb; color: #fff; }
+  button:disabled { background: #334155; color: #64748b; cursor: default; }
+  #songs { list-style: none; padding: 0; margin: 16px 0; }
+  #songs li { padding: 12px; margin-bottom: 8px; border-radius: 8px; background: #1e293b;
+              cursor: pointer; border: 2px solid transparent; }
+  #songs li.sel { border-color: #60a5fa; }
+  .row { display: flex; gap: 8px; }
+  .row button { flex: 1; }
+  #status { margin-top: 16px; color: #94a3b8; }
+</style>
 </head>
-
 <body>
-  <main>
+<main>
+  <h1>ESP32 Player</h1>
+  <button id="connect">Conectar ESP32</button>
+  <ul id="songs"></ul>
+  <div class="row">
+    <button id="play" disabled>▶ Começar</button>
+    <button id="pause" disabled>⏸ Pausar</button>
+  </div>
+  <p id="status">Desconectado. Ligue a ESP32 no USB e clique em Conectar.</p>
+</main>
+<script>
+// Conversa com a ESP32 pelo cabo USB (Web Serial, só Chrome/Edge no computador).
+// Protocolo em src/main.cpp: envia L / T<n> / P; recebe M<n>:<nome> e S:<estado>[:<n>].
+var writer = null;
+var selected = -1;   // música escolhida na lista
+var names = [];
 
-    <!-- Cabeçalho + indicador de conexão -->
-    <header>
-      <h1>ESP32 PLAYER</h1>
-      <span id="conn">offline</span>
-    </header>
+function $(id) { return document.getElementById(id); }
 
-    <!-- Música atual -->
-    <p id="now">Tocando: <b id="cur">nenhuma</b></p>
+function send(cmd) {
+  if (writer) writer.write(new TextEncoder().encode(cmd + "\n"));
+}
 
-    <!-- Lista de músicas (preenchida pelo app.js) -->
-    <div id="list"></div>
+function renderList() {
+  var ul = $("songs");
+  ul.innerHTML = "";
+  names.forEach(function (name, i) {
+    var li = document.createElement("li");
+    li.textContent = name;
+    if (i === selected) li.className = "sel";
+    li.onclick = function () { selected = i; renderList(); $("play").disabled = false; };
+    ul.appendChild(li);
+  });
+}
 
-    <button id="stop">Parar</button>
+function handleLine(line) {
+  var m = line.match(/^M(\d+):(.*)$/);
+  if (m) {
+    names[+m[1]] = m[2];
+    renderList();
+    return;
+  }
+  var s = line.match(/^S:(tocando|pausado|parado)(?::(\d+))?$/);
+  if (!s) return;  // ignora mensagens de boot da placa
+  if (s[2] !== undefined) { selected = +s[2]; renderList(); }
+  $("status").textContent = s[1] === "parado" ? "Parado" :
+    (s[1] === "tocando" ? "Tocando: " : "Pausado: ") + names[selected];
+  $("play").disabled = selected < 0 || s[1] === "tocando";
+  $("pause").disabled = s[1] !== "tocando";
+}
 
-    <!-- Envio de nova música -->
-    <h2>Enviar música</h2>
-    <input type="text" id="nm" maxlength="32" placeholder="Nome (opcional)">
-    <input type="file" id="file" accept=".txt,text/plain">
-    <button id="up">Enviar</button>
+async function readLoop(port) {
+  var reader = port.readable.pipeThrough(new TextDecoderStream()).getReader();
+  var buffer = "";
+  try {
+    while (true) {
+      var r = await reader.read();
+      if (r.done) break;
+      buffer += r.value;
+      var lines = buffer.split("\n");
+      buffer = lines.pop();
+      lines.forEach(function (l) { handleLine(l.trim()); });
+    }
+  } catch (e) { /* cabo desconectado */ }
+  writer = null;
+  $("status").textContent = "Desconectado.";
+  $("connect").disabled = false;
+  $("play").disabled = $("pause").disabled = true;
+}
 
-    <!-- Mensagens de status/erro -->
-    <p id="msg"></p>
+$("connect").onclick = async function () {
+  if (!("serial" in navigator)) {
+    $("status").textContent = "Este navegador não tem Web Serial. Use Chrome ou Edge no computador.";
+    return;
+  }
+  try {
+    var port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    // Solta as linhas de reset, que algumas placas seguram ao abrir a porta.
+    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+    writer = port.writable.getWriter();
+    $("connect").disabled = true;
+    $("status").textContent = "Conectado. Carregando músicas...";
+    readLoop(port);
+    setTimeout(function () { send("L"); }, 1500);  // espera a placa terminar de iniciar
+  } catch (e) {
+    $("status").textContent = "Não foi possível conectar (a porta pode estar aberta no Serial Monitor).";
+  }
+};
 
-  </main>
-
-  <script src="app.js"></script>
+$("play").onclick = function () { if (selected >= 0) send("T" + selected); };
+$("pause").onclick = function () { send("P"); };
+</script>
 </body>
-
 </html>
