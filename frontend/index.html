@@ -18,6 +18,19 @@
   .row { display: flex; gap: 8px; }
   .row button { flex: 1; }
   #status { margin-top: 16px; color: #94a3b8; }
+  [hidden] { display: none !important; }
+  .side { position: fixed; top: 96px; text-align: center; }
+  #sideL { left: max(8px, calc(50% - 210px - 150px)); }
+  #sideR { right: max(8px, calc(50% - 210px - 150px)); }
+  .side canvas { width: 128px; height: 160px; image-rendering: pixelated; display: block; }  h2 { margin: 24px 0 8px; font-size: 1.1rem; color: #60a5fa; }
+  #rank { list-style: none; padding: 0; margin: 0; }
+  #rank li { display: flex; justify-content: space-between; padding: 8px 12px; margin-bottom: 6px;
+             border-radius: 8px; background: #1e293b; }
+  #rank li b { color: #60a5fa; }
+  #volume { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+  #volume input { flex: 1; accent-color: #60a5fa; }
+  #volVal { min-width: 3.2em; text-align: right; color: #94a3b8; }
+  #rankMsg { color: #94a3b8; font-size: .85rem; margin: 6px 0 0; }
 </style>
 </head>
 <body>
@@ -30,7 +43,23 @@
     <button id="pause" disabled>⏸ Pausar</button>
   </div>
   <p id="status">Desconectado. Ligue a ESP32 no USB e clique em Conectar.</p>
+  <div id="rankBox" hidden>
+    <div id="volume">
+      <label for="vol">Volume</label>
+      <input id="vol" type="range" min="0" max="100" value="100">
+      <span id="volVal">100%</span>
+    </div>
+    <h2>Ranking</h2>
+    <ol id="rank"></ol>
+    <p id="rankMsg"></p>
+  </div>
 </main>
+<div class="side" id="sideL">
+  <canvas id="dancerL" width="16" height="20" hidden></canvas>
+</div>
+<div class="side" id="sideR">
+  <canvas id="dancerR" width="16" height="20" hidden></canvas>
+</div>
 <script>
 // Conversa com a ESP32 pelo cabo USB (Web Serial, só Chrome/Edge no computador).
 // Protocolo em src/main.cpp: envia L / T<n> / P; recebe M<n>:<nome> e S:<estado>[:<n>].
@@ -38,7 +67,177 @@ var writer = null;
 var selected = -1;   // música escolhida na lista
 var names = [];
 
+// URL do Realtime Database, sem barra no final. Ex.: "https://meu-projeto-default-rtdb.firebaseio.com"
+var FIREBASE_URL = "https://esp32-music-default-rtdb.firebaseio.com";
+
+var playState = "parado";   // último estado recebido da placa
+var counts = {};            // nome -> quantidade de vezes tocada
+var frame = 0;
+var danceTimer = null;
+
 function $(id) { return document.getElementById(id); }
+
+function fbKey(name) { return name.replace(/[.$#\[\]\/]/g, "_"); }
+
+function renderRank() {
+  var keys = Object.keys(counts);
+  names.forEach(function (n) { var k = fbKey(n); if (keys.indexOf(k) < 0) keys.push(k); });
+  keys.sort(function (a, b) { return (counts[b] || 0) - (counts[a] || 0) || (a < b ? -1 : 1); });
+  var ol = $("rank");
+  ol.innerHTML = "";
+  keys.forEach(function (k) {
+    var li = document.createElement("li");
+    var span = document.createElement("span");
+    span.textContent = k;
+    var b = document.createElement("b");
+    b.textContent = (counts[k] || 0) + "x";
+    li.appendChild(span);
+    li.appendChild(b);
+    ol.appendChild(li);
+  });
+}
+
+async function loadRank() {
+  if (!FIREBASE_URL) {
+    $("rankMsg").textContent = "Ranking desligado: preencha FIREBASE_URL no início do script.";
+    renderRank();
+    return;
+  }
+  try {
+    var r = await fetch(FIREBASE_URL + "/ranking.json");
+    if (!r.ok) throw new Error(r.status);
+    counts = (await r.json()) || {};
+    $("rankMsg").textContent = "";
+  } catch (e) {
+    $("rankMsg").textContent = "Não foi possível ler o ranking do Firebase.";
+  }
+  renderRank();
+}
+
+async function countPlay(name) {
+  if (!FIREBASE_URL || !name) return;
+  try {
+    var r = await fetch(FIREBASE_URL + "/ranking/" + encodeURIComponent(fbKey(name)) + ".json", {
+      method: "PUT",
+      body: JSON.stringify({ ".sv": { "increment": 1 } })
+    });
+    if (!r.ok) throw new Error(r.status);
+  } catch (e) {
+    $("rankMsg").textContent = "Não foi possível gravar no Firebase.";
+    return;
+  }
+  loadRank();
+}
+
+// Personagens: cada música tem dois (o 1º à direita, o 2º à esquerda). Pixels num canvas 16x20.
+var DANCERS = {
+  "Super Mario": [
+    { label: "Mario",  skin: "#f5c08a", hair: "#5b3a1e", shirt: "#dc2626", pants: "#2563eb", shoes: "#5b3a1e", look: "mario" },
+    { label: "Luigi",  skin: "#f5c08a", hair: "#5b3a1e", shirt: "#16a34a", pants: "#2563eb", shoes: "#5b3a1e", look: "mario" }
+  ],
+  "Harry Potter": [
+    { label: "Harry",    skin: "#f5c08a", hair: "#1f1f1f", shirt: "#7f1d1d", pants: "#1f1f1f", shoes: "#111111", look: "wizard" },
+    { label: "Hermione", skin: "#f5c08a", hair: "#7c4a21", shirt: "#7f1d1d", pants: "#1f1f1f", shoes: "#111111", look: "witch" }
+  ],
+  "Piratas do Caribe": [
+    { label: "Capitão", skin: "#d9a066", hair: "#111111", shirt: "#e5e7eb", pants: "#78350f", shoes: "#111111", look: "pirate" },
+    { label: "Marujo",  skin: "#d9a066", hair: "#dc2626", shirt: "#f59e0b", pants: "#1f2937", shoes: "#111111", look: "bandana" }
+  ],
+  "Fur Elise": [
+    { label: "Pianista", skin: "#f5c08a", hair: "#e5e7eb", shirt: "#1e3a8a", pants: "#1e3a8a", shoes: "#111111", look: "composer" },
+    { label: "Elise",    skin: "#f5c08a", hair: "#5b3a1e", shirt: "#db2777", pants: "#db2777", shoes: "#111111", look: "lady" }
+  ]
+};
+var GENERIC = [
+  { label: "Dançarino", skin: "#f5c08a", hair: "#4b2e83", shirt: "#16a34a", pants: "#334155", shoes: "#111111", look: "plain" },
+  { label: "Dançarina", skin: "#f5c08a", hair: "#92400e", shirt: "#ea580c", pants: "#334155", shoes: "#111111", look: "plain" }
+];
+
+function dancersFor(name) { return DANCERS[name] || GENERIC; }
+
+function drawDancer(canvasId, d, f) {
+  var c = $(canvasId).getContext("2d");
+  c.clearRect(0, 0, 16, 20);
+  function px(x, y, w, h, color) { c.fillStyle = color; c.fillRect(x, y, w, h); }
+  var up = f === 1;
+  var y0 = up ? 0 : 1;
+  px(up ? 4 : 5, 18, 2, 1, d.shoes);
+  px(up ? 10 : 9, 18, 2, 1, d.shoes);
+  px(up ? 4 : 5, 15 + y0 - 1, 2, 3 - y0 + 1, d.pants);
+  px(up ? 10 : 9, 15 + y0 - 1, 2, 3 - y0 + 1, d.pants);
+  px(5, 9 + y0, 6, 6 - y0, d.shirt);
+  px(5, 13 + y0, 6, 2, d.pants);
+  if (d.look === "mario") { px(5, 9 + y0, 1, 4, d.pants); px(10, 9 + y0, 1, 4, d.pants); }
+  if (d.look === "pirate") { px(5, 11 + y0, 6, 1, "#1d4ed8"); px(5, 13 + y0, 6, 1, "#1d4ed8"); }
+  if (d.look === "composer") { px(7, 9 + y0, 2, 2, "#f8fafc"); }
+  if (d.look === "lady") { px(4, 13 + y0, 8, 3, d.pants); }
+  if (up) {
+    px(3, 6, 2, 4, d.shirt); px(3, 5, 2, 1, d.skin);
+    px(11, 6, 2, 4, d.shirt); px(11, 5, 2, 1, d.skin);
+    if (d.look === "wizard" || d.look === "witch") px(12, 2, 1, 3, "#a16207");
+  } else {
+    px(3, 10 + y0, 2, 4, d.shirt); px(3, 14 + y0, 2, 1, d.skin);
+    px(11, 10 + y0, 2, 4, d.shirt); px(11, 14 + y0, 2, 1, d.skin);
+  }
+  var h = y0;
+  px(5, 3 + h, 6, 6, d.skin);
+  px(6, 6 + h, 1, 1, "#111111");
+  px(9, 6 + h, 1, 1, "#111111");
+  px(7, 8 + h, 2, 1, "#b91c1c");
+  if (d.look === "mario") {
+    px(5, 2 + h, 6, 2, d.shirt); px(4, 4 + h, 7, 1, d.shirt);
+    px(6, 7 + h, 4, 1, d.hair);
+    px(5, 5 + h, 1, 2, d.hair); px(10, 5 + h, 1, 2, d.hair);
+  } else if (d.look === "wizard") {
+    px(5, 2 + h, 6, 2, d.hair); px(5, 4 + h, 1, 2, d.hair); px(10, 4 + h, 1, 2, d.hair);
+    px(5, 6 + h, 3, 1, "#111111"); px(8, 6 + h, 3, 1, "#111111");
+    px(6, 6 + h, 1, 1, "#7dd3fc"); px(9, 6 + h, 1, 1, "#7dd3fc");
+    px(8, 4 + h, 1, 1, "#ef4444");
+  } else if (d.look === "witch") {
+    px(4, 2 + h, 8, 3, d.hair); px(4, 5 + h, 1, 5, d.hair); px(11, 5 + h, 1, 5, d.hair);
+  } else if (d.look === "pirate") {
+    px(4, 1 + h, 8, 2, d.hair); px(5, 0 + h, 6, 1, d.hair); px(4, 3 + h, 8, 1, d.hair);
+    px(7, 1 + h, 2, 1, "#f8fafc");
+    px(9, 6 + h, 1, 1, "#000000");
+    px(6, 8 + h, 4, 1, "#3f2a14");
+  } else if (d.look === "bandana") {
+    px(5, 2 + h, 6, 2, d.hair); px(11, 3 + h, 1, 2, d.hair);
+    px(5, 9 + h, 6, 1, "#3f2a14");
+    px(6, 8 + h, 4, 1, "#3f2a14");
+  } else if (d.look === "composer") {
+    px(4, 2 + h, 8, 3, d.hair); px(4, 5 + h, 1, 4, d.hair); px(11, 5 + h, 1, 4, d.hair);
+    px(4, 9 + h, 1, 1, d.hair); px(11, 9 + h, 1, 1, d.hair);
+  } else if (d.look === "lady") {
+    px(5, 2 + h, 6, 2, d.hair); px(7, 1 + h, 2, 1, d.hair);
+    px(4, 4 + h, 1, 6, d.hair); px(11, 4 + h, 1, 6, d.hair);
+    px(7, 3 + h, 2, 1, "#fbbf24");
+  } else {
+    px(5, 2 + h, 6, 2, d.hair);
+  }
+}
+
+var shownSong = -1;
+
+function renderDancer() {
+  var hide = playState === "parado" || shownSong < 0;
+  $("dancerR").hidden = $("dancerL").hidden = hide;
+  if (hide) return;
+  var ds = dancersFor(names[shownSong] || "");
+  drawDancer("dancerR", ds[0], frame);
+  drawDancer("dancerL", ds[1], frame);
+}
+
+
+function setDancing(on) {
+  if (on && !danceTimer) {
+    danceTimer = setInterval(function () { frame = 1 - frame; renderDancer(); }, 350);
+  } else if (!on && danceTimer) {
+    clearInterval(danceTimer);
+    danceTimer = null;
+    frame = 0;
+    renderDancer();
+  }
+}
 
 function send(cmd) {
   if (writer) writer.write(new TextEncoder().encode(cmd + "\n"));
@@ -51,9 +250,10 @@ function renderList() {
     var li = document.createElement("li");
     li.textContent = name;
     if (i === selected) li.className = "sel";
-    li.onclick = function () { selected = i; renderList(); $("play").disabled = false; };
+    li.onclick = function () { selected = i; renderList(); renderDancer(); $("play").disabled = false; };
     ul.appendChild(li);
   });
+  renderRank();
 }
 
 function handleLine(line) {
@@ -63,9 +263,18 @@ function handleLine(line) {
     renderList();
     return;
   }
+  var c = line.match(/^C:(\d+)$/);
+  if (c) {
+    countPlay(names[+c[1]]);
+    return;
+  }
   var s = line.match(/^S:(tocando|pausado|parado)(?::(\d+))?$/);
   if (!s) return;  // ignora mensagens de boot da placa
   if (s[2] !== undefined) { selected = +s[2]; renderList(); }
+  playState = s[1];
+  if (s[2] !== undefined) shownSong = +s[2];
+  setDancing(s[1] === "tocando");
+  renderDancer();
   $("status").textContent = s[1] === "parado" ? "Parado" :
     (s[1] === "tocando" ? "Tocando: " : "Pausado: ") + names[selected];
   $("play").disabled = selected < 0 || s[1] === "tocando";
@@ -86,6 +295,10 @@ async function readLoop(port) {
     }
   } catch (e) { /* cabo desconectado */ }
   writer = null;
+  $("rankBox").hidden = true;
+  playState = "parado";
+  setDancing(false);
+  renderDancer();
   $("status").textContent = "Desconectado.";
   $("connect").disabled = false;
   $("play").disabled = $("pause").disabled = true;
@@ -103,16 +316,25 @@ $("connect").onclick = async function () {
     await port.setSignals({ dataTerminalReady: false, requestToSend: false });
     writer = port.writable.getWriter();
     $("connect").disabled = true;
+    $("rankBox").hidden = false;
+    loadRank();
     $("status").textContent = "Conectado. Carregando músicas...";
     readLoop(port);
-    setTimeout(function () { send("L"); }, 1500);  // espera a placa terminar de iniciar
+    setTimeout(function () { send("L"); send("W" + $("vol").value); }, 1500);  // espera a placa terminar de iniciar
   } catch (e) {
     $("status").textContent = "Não foi possível conectar (a porta pode estar aberta no Serial Monitor).";
   }
 };
 
+$("vol").oninput = function () {
+  $("volVal").textContent = this.value + "%";
+  send("W" + this.value);
+};
+
 $("play").onclick = function () { if (selected >= 0) send("T" + selected); };
 $("pause").onclick = function () { send("P"); };
+
+renderDancer();
 </script>
 </body>
 </html>

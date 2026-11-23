@@ -3,7 +3,7 @@
 Leia `AGENTS.md` antes de qualquer alteração: ele é a especificação do projeto.
 
 ## Resumo
-ESP32 **sem Wi-Fi ou rede**, com 3 buzzers passivos (GPIO 18, 19, 21) que tocam padrões rítmicos (som/silêncio).
+ESP32 **sem Wi-Fi ou rede** (só a página usa o Firebase REST para o ranking, e mostra um personagem pixelado dançando por música), com 3 buzzers passivos (GPIO 18, 19, 21) que tocam padrões rítmicos (som/silêncio).
 A página `frontend/index.html`, aberta no Chrome/Edge do PC, controla a placa pelo cabo USB (Web Serial):
 lista de músicas, Começar e Pausar (continua de onde parou).
 
@@ -22,6 +22,6 @@ lista de músicas, Começar e Pausar (continua de onde parou).
 
 ## Regras-chave
 - Sem `delay()` na reprodução; usar `millis()`.
-- Sem rede, bibliotecas externas ou frameworks.
+- Firmware sem rede; página sem bibliotecas, frameworks ou CDNs (só `fetch` ao Firebase).
 - Não afirmar teste de hardware sem acesso físico.
 - Responder em português.

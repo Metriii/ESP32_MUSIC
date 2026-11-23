@@ -5,6 +5,10 @@ static const uint8_t BUZZER_PINS[] = {18, 19, 21};
 static const size_t BUZZER_COUNT = sizeof(BUZZER_PINS) / sizeof(BUZZER_PINS[0]);
 static const uint8_t BUZZER_CHANNEL = 0;
 static const uint32_t TONE_HZ = 2000;
+static const uint8_t PWM_BITS = 10;
+static const uint32_t MAX_DUTY = 512;
+static uint32_t duty = MAX_DUTY;
+static bool buzzerOn = false;
 
 static const size_t MAX_SONGS = 20;
 static const size_t MAX_STEPS = 512;
@@ -23,7 +27,14 @@ static unsigned long stepStart = 0;
 static unsigned long pausedElapsed = 0;
 
 static void setBuzzer(bool on) {
-  ledcWriteTone(BUZZER_CHANNEL, on ? TONE_HZ : 0);
+  buzzerOn = on;
+  ledcWrite(BUZZER_CHANNEL, on ? duty : 0);
+}
+
+static void setVolume(uint32_t percent) {
+  if (percent > 100) percent = 100;
+  duty = percent * percent * MAX_DUTY / 10000;
+  if (buzzerOn) ledcWrite(BUZZER_CHANNEL, duty);
 }
 
 static void loadSongList() {
@@ -114,6 +125,7 @@ static void updatePlayer() {
   if (millis() - stepStart < pattern[stepIndex]) return;
   stepIndex = (stepIndex + 1) % patternCount;
   stepStart = millis();
+  if (stepIndex == 0) Serial.printf("C:%u\n", (unsigned)current);
   setBuzzer(stepIndex % 2 == 0);
 }
 
@@ -133,6 +145,10 @@ static void readCommands() {
       sendList();
       continue;
     }
+    if (line[0] == 'W') {
+      setVolume(strtoul(line + 1, nullptr, 10));
+      continue;
+    }
     if (line[0] == 'T') {
       playSong(strtoul(line + 1, nullptr, 10));
     } else if (line[0] == 'P') {
@@ -144,7 +160,7 @@ static void readCommands() {
 
 void setup() {
   Serial.begin(115200);
-  ledcSetup(BUZZER_CHANNEL, TONE_HZ, 8);
+  ledcSetup(BUZZER_CHANNEL, TONE_HZ, PWM_BITS);
   for (size_t i = 0; i < BUZZER_COUNT; i++) ledcAttachPin(BUZZER_PINS[i], BUZZER_CHANNEL);
   setBuzzer(false);
   if (LittleFS.begin(true)) loadSongList();

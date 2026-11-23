@@ -4,7 +4,7 @@
 
 Uma ESP32 toca padrões rítmicos em buzzers passivos. Uma página web simples, aberta no computador, mostra as músicas e permite **Começar** e **Pausar**.
 
-**Não há Wi-Fi, internet nem rede de nenhum tipo.** A página conversa com a ESP32 pelo cabo USB, usando a Web Serial API do navegador.
+**A ESP32 não usa Wi-Fi nem rede.** A página conversa com a ESP32 pelo cabo USB, usando a Web Serial API do navegador. Só a página usa internet, apenas para o ranking de músicas mais tocadas no Firebase Realtime Database (API REST via `fetch`, `FIREBASE_URL` no início do script). Cada personagem pixelado (um por música) dança no canvas enquanto a música toca.
 
 Prioridade: simplicidade. Não acrescentar recursos que não foram pedidos.
 
@@ -14,7 +14,7 @@ Prioridade: simplicidade. Não acrescentar recursos que não foram pedidos.
 - HTML, CSS e JavaScript puro em um único arquivo.
 - Web Serial API (Chrome ou Edge no computador; não funciona em celular nem no Firefox/Safari).
 
-Não usar Wi-Fi, servidor HTTP, bibliotecas externas, frameworks ou CDNs. O LittleFS (nativo) guarda só os arquivos de música.
+Não usar Wi-Fi na ESP32, servidor HTTP, bibliotecas externas, frameworks, SDKs ou CDNs (a página fala com o Firebase só por REST). O LittleFS (nativo) guarda só os arquivos de música.
 
 ## 3. Hardware
 
@@ -44,8 +44,10 @@ Os padrões são ritmos inspirados nas músicas, não reproduções fiéis. Ao t
 | PC → ESP32 | `L` | Pede a lista de músicas |
 | PC → ESP32 | `T<n>` | Toca a música `n`; se ela estiver pausada, continua de onde parou; outra música começa do início |
 | PC → ESP32 | `P` | Pausa (desliga os buzzers e guarda a posição) |
+| PC → ESP32 | `W<n>` | Volume de 0 a 100 (duty do PWM dos buzzers; sem resposta; a página reenvia ao conectar) |
 | ESP32 → PC | `M<n>:<nome>` | Uma música da lista |
 | ESP32 → PC | `S:tocando:<n>`, `S:pausado:<n>`, `S:parado` | Estado atual, enviado após cada comando |
+| ESP32 → PC | `C:<n>` | A música `n` completou um ciclo do padrão (a página soma +1 no ranking) |
 
 A ESP32 envia a lista e o estado ao ligar e após `L`. Linhas desconhecidas são ignoradas dos dois lados.
 
