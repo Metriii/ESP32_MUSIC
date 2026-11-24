@@ -25,7 +25,7 @@ Tudo que está em `data/` vai para a placa com `uploadfs`.
 Os três tocam o mesmo padrão. Se algum buzzer consumir mais de ~20 mA, use um transistor NPN + resistor de ~1 kΩ naquele canal. Para mudar a altura do som, altere `TONE_HZ` em `src/main.cpp`.
 
 ## Como usar
-1. Copie `src/secrets.example.h` para `src/secrets.h` e preencha `WIFI_SSID` e `WIFI_PASSWORD` com a sua rede (de 2,4 GHz). O `src/secrets.h` está no `.gitignore`, então a senha não vai para o GitHub.
+1. No início de `src/main.cpp`, preencha `WIFI_SSID` e `WIFI_PASSWORD` com a sua rede (de 2,4 GHz). Não envie a senha real para o GitHub: preencha só no seu computador e não faça commit desse trecho.
 2. Envie o firmware: `pio run -t upload`.
 3. Envie a página e as músicas: `pio run -t uploadfs` (no VS Code: PlatformIO → esp32dev → Platform → **Upload Filesystem Image**).
 4. Abra o Serial Monitor (`pio device monitor`) e veja a linha `Wi-Fi conectado. Acesse http://esp32-music.local ou http://<IP>`.
@@ -95,7 +95,7 @@ Todas as rotas de `/api` respondem com o estado:
 ## Regras do projeto
 - Prioridade: simplicidade. Não acrescentar recursos nem dependências que não foram pedidos.
 - Servidor HTTP só com bibliotecas que já vêm no framework Arduino da ESP32; página sem bibliotecas externas.
-- Todo o backend fica em `src/main.cpp`. As credenciais do Wi-Fi ficam em `src/secrets.h`, que não vai para o Git.
+- Todo o backend fica em `src/main.cpp`. A senha real do Wi-Fi não deve ir para o Git.
 - Sem comentários no código (`main.cpp` e `index.html`).
 - Não trocar o hardware sem autorização.
 - Não afirmar que o hardware foi testado sem acesso físico à placa.
