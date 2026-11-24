@@ -1,4 +1,0 @@
-#pragma once
-
-#define WIFI_SSID "NOME_DA_SUA_REDE"
-#define WIFI_PASSWORD "SENHA_DA_SUA_REDE"

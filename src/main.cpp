@@ -4,12 +4,8 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 
-#if __has_include("secrets.h")
-#include "secrets.h"
-#else
-#include "secrets.example.h"
-#endif
-
+static const char *WIFI_SSID = "NOME_DA_SUA_REDE";
+static const char *WIFI_PASSWORD = "SENHA_DA_SUA_REDE";
 static const char *HOSTNAME = "esp32-music";
 static const unsigned long WIFI_TIMEOUT_MS = 15000;
 
@@ -242,7 +238,7 @@ static void connectWifi() {
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf("Wi-Fi conectado. Acesse http://%s.local ou http://%s\n", HOSTNAME, WiFi.localIP().toString().c_str());
   } else {
-    Serial.println("Sem Wi-Fi: confira WIFI_SSID e WIFI_PASSWORD em src/secrets.h");
+    Serial.println("Sem Wi-Fi: confira WIFI_SSID e WIFI_PASSWORD no inicio de src/main.cpp");
   }
 }
 
