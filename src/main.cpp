@@ -4,8 +4,8 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 
-static const char *WIFI_SSID = "NOME_DA_SUA_REDE";
-static const char *WIFI_PASSWORD = "SENHA_DA_SUA_REDE";
+#include "secrets.h"
+
 static const char *HOSTNAME = "esp32-music";
 static const unsigned long WIFI_TIMEOUT_MS = 15000;
 
@@ -40,16 +40,20 @@ static size_t cycleSong = 0;
 
 static WebServer server(80);
 
+static void writeBuzzers(uint32_t value) {
+  for (size_t i = 0; i < BUZZER_COUNT; i++) ledcWrite(BUZZER_PINS[i], value);
+}
+
 static void setBuzzer(bool on) {
   buzzerOn = on;
-  ledcWrite(BUZZER_CHANNEL, on ? duty : 0);
+  writeBuzzers(on ? duty : 0);
 }
 
 static void setVolume(uint32_t percent) {
   if (percent > 100) percent = 100;
   volumePercent = percent;
   duty = percent * percent * MAX_DUTY / 10000;
-  if (buzzerOn) ledcWrite(BUZZER_CHANNEL, duty);
+  if (buzzerOn) writeBuzzers(duty);
 }
 
 static void loadSongList() {
@@ -238,7 +242,7 @@ static void connectWifi() {
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf("Wi-Fi conectado. Acesse http://%s.local ou http://%s\n", HOSTNAME, WiFi.localIP().toString().c_str());
   } else {
-    Serial.println("Sem Wi-Fi: confira WIFI_SSID e WIFI_PASSWORD no inicio de src/main.cpp");
+    Serial.println("Sem Wi-Fi: confira WIFI_SSID e WIFI_PASSWORD em src/secrets.h");
   }
 }
 
@@ -257,8 +261,7 @@ static void startServer() {
 
 void setup() {
   Serial.begin(115200);
-  ledcSetup(BUZZER_CHANNEL, TONE_HZ, PWM_BITS);
-  for (size_t i = 0; i < BUZZER_COUNT; i++) ledcAttachPin(BUZZER_PINS[i], BUZZER_CHANNEL);
+  for (size_t i = 0; i < BUZZER_COUNT; i++) ledcAttachChannel(BUZZER_PINS[i], TONE_HZ, PWM_BITS, BUZZER_CHANNEL);
   setBuzzer(false);
   if (LittleFS.begin(true)) loadSongList();
   connectWifi();
