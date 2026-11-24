@@ -5,6 +5,7 @@ Uma ESP32 toca ritmos em 3 buzzers passivos. Uma página no computador mostra as
 ## Estrutura
 ```text
 frontend/index.html   interface (abre no PC, não vai para a placa)
+frontend/style.css    estilos da interface
 musicas/*.txt         uma música por arquivo (gravadas na placa com uploadfs)
 src/main.cpp          firmware: lê as músicas, toca os buzzers e recebe comandos pelo USB
 platformio.ini
@@ -74,7 +75,7 @@ No Serial Monitor, digite `L` (lista), `T0` (toca a música 0) ou `P` (pausa).
 - **Sem `delay()`**: o tempo de cada passo é controlado com `millis()` em `updatePlayer()`, chamado no `loop()`. A leitura do Serial também não bloqueia.
 - **Estados**: parado, tocando e pausado. Pausar guarda quanto do passo já passou, então Começar continua do mesmo ponto. Ao terminar o padrão, a música recomeça em loop.
 - **Músicas**: lidas do LittleFS. A lista é montada na inicialização (ordem alfabética) e o conteúdo só é lido quando a música toca.
-- **Página**: um único arquivo HTML/CSS/JS puro, sem bibliotecas, frameworks ou CDNs. A única rede usada é o `fetch` ao Firebase, para o ranking.
+- **Página**: HTML, CSS e JavaScript puros (`index.html` + `style.css`), sem bibliotecas, frameworks ou CDNs. A única rede usada é o `fetch` ao Firebase, para o ranking.
 
 ## Protocolo serial (115200 baud, uma linha por mensagem)
 
@@ -93,7 +94,7 @@ Linhas desconhecidas são ignoradas dos dois lados. Se mudar o protocolo, altere
 ## Regras do projeto
 - Prioridade: simplicidade. Não acrescentar recursos nem dependências que não foram pedidos.
 - Firmware sem Wi-Fi e sem servidor; página sem bibliotecas externas.
-- `src/main.cpp` não leva comentários `//`.
+- Sem comentários no código (`main.cpp` e `index.html`).
 - Não trocar o hardware sem autorização.
 - Não afirmar que o hardware foi testado sem acesso físico à placa.
 

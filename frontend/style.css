@@ -1,0 +1,141 @@
+body {
+  margin: 0;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: system-ui, sans-serif;
+}
+
+main {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+h1 {
+  margin: 0 0 16px;
+  font-size: 1.4rem;
+  color: #60a5fa;
+}
+
+h2 {
+  margin: 24px 0 8px;
+  font-size: 1.1rem;
+  color: #60a5fa;
+}
+
+button {
+  font: inherit;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 16px;
+  cursor: pointer;
+  background: #2563eb;
+  color: #fff;
+}
+
+button:disabled {
+  background: #334155;
+  color: #64748b;
+  cursor: default;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+#songs {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+
+#songs li {
+  padding: 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: #1e293b;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+
+#songs li.sel {
+  border-color: #60a5fa;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}
+
+.row button {
+  flex: 1;
+}
+
+#status {
+  margin-top: 16px;
+  color: #94a3b8;
+}
+
+.side {
+  position: fixed;
+  top: 96px;
+  text-align: center;
+}
+
+#sideL {
+  left: max(8px, calc(50% - 210px - 150px));
+}
+
+#sideR {
+  right: max(8px, calc(50% - 210px - 150px));
+}
+
+.side canvas {
+  width: 128px;
+  height: 160px;
+  image-rendering: pixelated;
+  display: block;
+}
+
+#rank {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#rank li {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background: #1e293b;
+}
+
+#rank li b {
+  color: #60a5fa;
+}
+
+#volume {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+#volume input {
+  flex: 1;
+  accent-color: #60a5fa;
+}
+
+#volVal {
+  min-width: 3.2em;
+  text-align: right;
+  color: #94a3b8;
+}
+
+#rankMsg {
+  color: #94a3b8;
+  font-size: 0.85rem;
+  margin: 6px 0 0;
+}

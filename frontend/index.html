@@ -4,34 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ESP32 Player</title>
-<style>
-  body { margin: 0; background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; }
-  main { max-width: 420px; margin: 0 auto; padding: 24px 16px; }
-  h1 { margin: 0 0 16px; font-size: 1.4rem; color: #60a5fa; }
-  button { font: inherit; border: 0; border-radius: 8px; padding: 10px 16px; cursor: pointer;
-           background: #2563eb; color: #fff; }
-  button:disabled { background: #334155; color: #64748b; cursor: default; }
-  #songs { list-style: none; padding: 0; margin: 16px 0; }
-  #songs li { padding: 12px; margin-bottom: 8px; border-radius: 8px; background: #1e293b;
-              cursor: pointer; border: 2px solid transparent; }
-  #songs li.sel { border-color: #60a5fa; }
-  .row { display: flex; gap: 8px; }
-  .row button { flex: 1; }
-  #status { margin-top: 16px; color: #94a3b8; }
-  [hidden] { display: none !important; }
-  .side { position: fixed; top: 96px; text-align: center; }
-  #sideL { left: max(8px, calc(50% - 210px - 150px)); }
-  #sideR { right: max(8px, calc(50% - 210px - 150px)); }
-  .side canvas { width: 128px; height: 160px; image-rendering: pixelated; display: block; }  h2 { margin: 24px 0 8px; font-size: 1.1rem; color: #60a5fa; }
-  #rank { list-style: none; padding: 0; margin: 0; }
-  #rank li { display: flex; justify-content: space-between; padding: 8px 12px; margin-bottom: 6px;
-             border-radius: 8px; background: #1e293b; }
-  #rank li b { color: #60a5fa; }
-  #volume { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
-  #volume input { flex: 1; accent-color: #60a5fa; }
-  #volVal { min-width: 3.2em; text-align: right; color: #94a3b8; }
-  #rankMsg { color: #94a3b8; font-size: .85rem; margin: 6px 0 0; }
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main>
@@ -61,17 +34,14 @@
   <canvas id="dancerR" width="16" height="20" hidden></canvas>
 </div>
 <script>
-// Conversa com a ESP32 pelo cabo USB (Web Serial, só Chrome/Edge no computador).
-// Protocolo em src/main.cpp: envia L / T<n> / P; recebe M<n>:<nome> e S:<estado>[:<n>].
 var writer = null;
-var selected = -1;   // música escolhida na lista
+var selected = -1;
 var names = [];
 
-// URL do Realtime Database, sem barra no final. Ex.: "https://meu-projeto-default-rtdb.firebaseio.com"
 var FIREBASE_URL = "https://esp32-music-default-rtdb.firebaseio.com";
 
-var playState = "parado";   // último estado recebido da placa
-var counts = {};            // nome -> quantidade de vezes tocada
+var playState = "parado";
+var counts = {};
 var frame = 0;
 var danceTimer = null;
 
@@ -129,7 +99,6 @@ async function countPlay(name) {
   loadRank();
 }
 
-// Personagens: cada música tem dois (o 1º à direita, o 2º à esquerda). Pixels num canvas 16x20.
 var DANCERS = {
   "Super Mario": [
     { label: "Mario",  skin: "#f5c08a", hair: "#5b3a1e", shirt: "#dc2626", pants: "#2563eb", shoes: "#5b3a1e", look: "mario" },
@@ -227,7 +196,6 @@ function renderDancer() {
   drawDancer("dancerL", ds[1], frame);
 }
 
-
 function setDancing(on) {
   if (on && !danceTimer) {
     danceTimer = setInterval(function () { frame = 1 - frame; renderDancer(); }, 350);
@@ -269,7 +237,7 @@ function handleLine(line) {
     return;
   }
   var s = line.match(/^S:(tocando|pausado|parado)(?::(\d+))?$/);
-  if (!s) return;  // ignora mensagens de boot da placa
+  if (!s) return;
   if (s[2] !== undefined) { selected = +s[2]; renderList(); }
   playState = s[1];
   if (s[2] !== undefined) shownSong = +s[2];
@@ -293,7 +261,7 @@ async function readLoop(port) {
       buffer = lines.pop();
       lines.forEach(function (l) { handleLine(l.trim()); });
     }
-  } catch (e) { /* cabo desconectado */ }
+  } catch (e) {}
   writer = null;
   $("rankBox").hidden = true;
   playState = "parado";
@@ -312,7 +280,6 @@ $("connect").onclick = async function () {
   try {
     var port = await navigator.serial.requestPort();
     await port.open({ baudRate: 115200 });
-    // Solta as linhas de reset, que algumas placas seguram ao abrir a porta.
     await port.setSignals({ dataTerminalReady: false, requestToSend: false });
     writer = port.writable.getWriter();
     $("connect").disabled = true;
@@ -320,7 +287,7 @@ $("connect").onclick = async function () {
     loadRank();
     $("status").textContent = "Conectado. Carregando músicas...";
     readLoop(port);
-    setTimeout(function () { send("L"); send("W" + $("vol").value); }, 1500);  // espera a placa terminar de iniciar
+    setTimeout(function () { send("L"); send("W" + $("vol").value); }, 1500);
   } catch (e) {
     $("status").textContent = "Não foi possível conectar (a porta pode estar aberta no Serial Monitor).";
   }
