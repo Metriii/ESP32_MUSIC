@@ -1,5 +1,17 @@
 #include <Arduino.h>
 #include <LittleFS.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <ESPmDNS.h>
+
+#if __has_include("secrets.h")
+#include "secrets.h"
+#else
+#include "secrets.example.h"
+#endif
+
+static const char *HOSTNAME = "esp32-music";
+static const unsigned long WIFI_TIMEOUT_MS = 15000;
 
 static const uint8_t BUZZER_PINS[] = {18, 19, 21};
 static const size_t BUZZER_COUNT = sizeof(BUZZER_PINS) / sizeof(BUZZER_PINS[0]);
@@ -8,6 +20,7 @@ static const uint32_t TONE_HZ = 2000;
 static const uint8_t PWM_BITS = 10;
 static const uint32_t MAX_DUTY = 512;
 static uint32_t duty = MAX_DUTY;
+static uint32_t volumePercent = 100;
 static bool buzzerOn = false;
 
 static const size_t MAX_SONGS = 20;
@@ -26,6 +39,11 @@ static size_t stepIndex = 0;
 static unsigned long stepStart = 0;
 static unsigned long pausedElapsed = 0;
 
+static uint32_t cycleTotal = 0;
+static size_t cycleSong = 0;
+
+static WebServer server(80);
+
 static void setBuzzer(bool on) {
   buzzerOn = on;
   ledcWrite(BUZZER_CHANNEL, on ? duty : 0);
@@ -33,12 +51,13 @@ static void setBuzzer(bool on) {
 
 static void setVolume(uint32_t percent) {
   if (percent > 100) percent = 100;
+  volumePercent = percent;
   duty = percent * percent * MAX_DUTY / 10000;
   if (buzzerOn) ledcWrite(BUZZER_CHANNEL, duty);
 }
 
 static void loadSongList() {
-  File dir = LittleFS.open("/");
+  File dir = LittleFS.open("/musicas");
   if (!dir) return;
   File f = dir.openNextFile();
   while (f && songCount < MAX_SONGS) {
@@ -62,7 +81,7 @@ static void addStep(uint32_t value) {
 }
 
 static bool loadPattern(size_t n) {
-  File f = LittleFS.open("/" + songNames[n] + ".txt", "r");
+  File f = LittleFS.open("/musicas/" + songNames[n] + ".txt", "r");
   if (!f) return false;
   patternCount = 0;
   uint32_t value = 0;
@@ -82,21 +101,6 @@ static bool loadPattern(size_t n) {
   f.close();
   patternCount -= patternCount % 2;
   return patternCount > 0;
-}
-
-static void sendStatus() {
-  if (state == PLAYING) {
-    Serial.printf("S:tocando:%u\n", (unsigned)current);
-  } else if (state == PAUSED) {
-    Serial.printf("S:pausado:%u\n", (unsigned)current);
-  } else {
-    Serial.println("S:parado");
-  }
-}
-
-static void sendList() {
-  for (size_t i = 0; i < songCount; i++) Serial.printf("M%u:%s\n", (unsigned)i, songNames[i].c_str());
-  sendStatus();
 }
 
 static void playSong(size_t n) {
@@ -125,37 +129,134 @@ static void updatePlayer() {
   if (millis() - stepStart < pattern[stepIndex]) return;
   stepIndex = (stepIndex + 1) % patternCount;
   stepStart = millis();
-  if (stepIndex == 0) Serial.printf("C:%u\n", (unsigned)current);
+  if (stepIndex == 0) {
+    cycleTotal++;
+    cycleSong = current;
+  }
   setBuzzer(stepIndex % 2 == 0);
 }
 
-static void readCommands() {
-  static char line[16];
-  static size_t len = 0;
-  while (Serial.available()) {
-    char c = Serial.read();
-    if (c != '\n' && c != '\r') {
-      if (len < sizeof(line) - 1) line[len++] = c;
-      continue;
-    }
-    if (len == 0) continue;
-    line[len] = '\0';
-    len = 0;
-    if (line[0] == 'L') {
-      sendList();
-      continue;
-    }
-    if (line[0] == 'W') {
-      setVolume(strtoul(line + 1, nullptr, 10));
-      continue;
-    }
-    if (line[0] == 'T') {
-      playSong(strtoul(line + 1, nullptr, 10));
-    } else if (line[0] == 'P') {
-      pauseSong();
-    }
-    sendStatus();
+static String jsonText(const String &text) {
+  String out = "\"";
+  for (size_t i = 0; i < text.length(); i++) {
+    char c = text[i];
+    if (c == '"' || c == '\\') out += '\\';
+    out += c;
   }
+  out += "\"";
+  return out;
+}
+
+static const char *stateName() {
+  if (state == PLAYING) return "tocando";
+  if (state == PAUSED) return "pausado";
+  return "parado";
+}
+
+static String stateJson() {
+  String json = "{\"estado\":\"";
+  json += stateName();
+  json += "\",\"musica\":";
+  json += state == STOPPED ? -1 : (int)current;
+  json += ",\"volume\":";
+  json += volumePercent;
+  json += ",\"ciclos\":";
+  json += cycleTotal;
+  json += ",\"cicloMusica\":";
+  json += (int)cycleSong;
+  json += "}";
+  return json;
+}
+
+static void sendJson(const String &json) {
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", json);
+}
+
+static void sendFile(const char *path, const char *type) {
+  File f = LittleFS.open(path, "r");
+  if (!f) {
+    server.send(404, "text/plain", "Arquivo nao encontrado");
+    return;
+  }
+  server.streamFile(f, type);
+  f.close();
+}
+
+static void handleIndex() {
+  sendFile("/web/index.html", "text/html; charset=utf-8");
+}
+
+static void handleStyle() {
+  sendFile("/web/style.css", "text/css; charset=utf-8");
+}
+
+static void handleSongs() {
+  String json = "[";
+  for (size_t i = 0; i < songCount; i++) {
+    if (i > 0) json += ",";
+    json += jsonText(songNames[i]);
+  }
+  json += "]";
+  sendJson(json);
+}
+
+static void handleState() {
+  sendJson(stateJson());
+}
+
+static void handlePlay() {
+  if (!server.hasArg("n")) {
+    server.send(400, "application/json", "{\"erro\":\"parametro n ausente\"}");
+    return;
+  }
+  playSong(strtoul(server.arg("n").c_str(), nullptr, 10));
+  sendJson(stateJson());
+}
+
+static void handlePause() {
+  pauseSong();
+  sendJson(stateJson());
+}
+
+static void handleVolume() {
+  if (!server.hasArg("v")) {
+    server.send(400, "application/json", "{\"erro\":\"parametro v ausente\"}");
+    return;
+  }
+  setVolume(strtoul(server.arg("v").c_str(), nullptr, 10));
+  sendJson(stateJson());
+}
+
+static void handleNotFound() {
+  server.send(404, "text/plain", "Nao encontrado");
+}
+
+static void connectWifi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.setHostname(HOSTNAME);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_TIMEOUT_MS) delay(250);
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("Wi-Fi conectado. Acesse http://%s.local ou http://%s\n", HOSTNAME, WiFi.localIP().toString().c_str());
+  } else {
+    Serial.println("Sem Wi-Fi: confira WIFI_SSID e WIFI_PASSWORD em src/secrets.h");
+  }
+}
+
+static void startServer() {
+  MDNS.begin(HOSTNAME);
+  server.on("/", HTTP_GET, handleIndex);
+  server.on("/style.css", HTTP_GET, handleStyle);
+  server.on("/api/musicas", HTTP_GET, handleSongs);
+  server.on("/api/estado", HTTP_GET, handleState);
+  server.on("/api/tocar", HTTP_POST, handlePlay);
+  server.on("/api/pausar", HTTP_POST, handlePause);
+  server.on("/api/volume", HTTP_POST, handleVolume);
+  server.onNotFound(handleNotFound);
+  server.begin();
 }
 
 void setup() {
@@ -164,10 +265,11 @@ void setup() {
   for (size_t i = 0; i < BUZZER_COUNT; i++) ledcAttachPin(BUZZER_PINS[i], BUZZER_CHANNEL);
   setBuzzer(false);
   if (LittleFS.begin(true)) loadSongList();
-  sendList();
+  connectWifi();
+  startServer();
 }
 
 void loop() {
-  readCommands();
+  server.handleClient();
   updatePlayer();
 }

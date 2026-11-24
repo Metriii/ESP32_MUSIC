@@ -9,14 +9,13 @@
 <body>
 <main>
   <h1>ESP32 Player</h1>
-  <button id="connect">Conectar ESP32</button>
   <ul id="songs"></ul>
   <div class="row">
     <button id="play" disabled>▶ Começar</button>
     <button id="pause" disabled>⏸ Pausar</button>
   </div>
-  <p id="status">Desconectado. Ligue a ESP32 no USB e clique em Conectar.</p>
-  <div id="rankBox" hidden>
+  <p id="status">Conectando à placa...</p>
+  <div id="rankBox">
     <div id="volume">
       <label for="vol">Volume</label>
       <input id="vol" type="range" min="0" max="100" value="100">
@@ -34,7 +33,9 @@
   <canvas id="dancerR" width="16" height="20" hidden></canvas>
 </div>
 <script>
-var writer = null;
+var connected = false;
+var lastCycles = -1;
+var volumeTimer = null;
 var selected = -1;
 var names = [];
 
@@ -207,8 +208,21 @@ function setDancing(on) {
   }
 }
 
-function send(cmd) {
-  if (writer) writer.write(new TextEncoder().encode(cmd + "\n"));
+async function api(path, post) {
+  var r = await fetch(path, post ? { method: "POST" } : undefined);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+function setConnected(on) {
+  if (connected === on) return;
+  connected = on;
+  if (on) return;
+  playState = "parado";
+  setDancing(false);
+  renderDancer();
+  $("status").textContent = "Sem conexão com a placa. Tentando de novo...";
+  $("play").disabled = $("pause").disabled = true;
 }
 
 function renderList() {
@@ -224,84 +238,79 @@ function renderList() {
   renderRank();
 }
 
-function handleLine(line) {
-  var m = line.match(/^M(\d+):(.*)$/);
-  if (m) {
-    names[+m[1]] = m[2];
+function applyState(s) {
+  if (s.musica >= 0 && s.musica !== shownSong) {
+    selected = s.musica;
+    shownSong = s.musica;
     renderList();
-    return;
   }
-  var c = line.match(/^C:(\d+)$/);
-  if (c) {
-    countPlay(names[+c[1]]);
-    return;
-  }
-  var s = line.match(/^S:(tocando|pausado|parado)(?::(\d+))?$/);
-  if (!s) return;
-  if (s[2] !== undefined) { selected = +s[2]; renderList(); }
-  playState = s[1];
-  if (s[2] !== undefined) shownSong = +s[2];
-  setDancing(s[1] === "tocando");
+  playState = s.estado;
+  setDancing(s.estado === "tocando");
   renderDancer();
-  $("status").textContent = s[1] === "parado" ? "Parado" :
-    (s[1] === "tocando" ? "Tocando: " : "Pausado: ") + names[selected];
-  $("play").disabled = selected < 0 || s[1] === "tocando";
-  $("pause").disabled = s[1] !== "tocando";
+  $("status").textContent = s.estado === "parado" ? "Parado" :
+    (s.estado === "tocando" ? "Tocando: " : "Pausado: ") + names[s.musica];
+  $("play").disabled = selected < 0 || s.estado === "tocando";
+  $("pause").disabled = s.estado !== "tocando";
+  if (lastCycles < 0) {
+    lastCycles = s.ciclos;
+    return;
+  }
+  for (var i = lastCycles; i < s.ciclos; i++) countPlay(names[s.cicloMusica]);
+  lastCycles = s.ciclos;
 }
 
-async function readLoop(port) {
-  var reader = port.readable.pipeThrough(new TextDecoderStream()).getReader();
-  var buffer = "";
+async function pollState() {
   try {
-    while (true) {
-      var r = await reader.read();
-      if (r.done) break;
-      buffer += r.value;
-      var lines = buffer.split("\n");
-      buffer = lines.pop();
-      lines.forEach(function (l) { handleLine(l.trim()); });
-    }
-  } catch (e) {}
-  writer = null;
-  $("rankBox").hidden = true;
-  playState = "parado";
-  setDancing(false);
-  renderDancer();
-  $("status").textContent = "Desconectado.";
-  $("connect").disabled = false;
-  $("play").disabled = $("pause").disabled = true;
-}
-
-$("connect").onclick = async function () {
-  if (!("serial" in navigator)) {
-    $("status").textContent = "Este navegador não tem Web Serial. Use Chrome ou Edge no computador.";
-    return;
-  }
-  try {
-    var port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 115200 });
-    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
-    writer = port.writable.getWriter();
-    $("connect").disabled = true;
-    $("rankBox").hidden = false;
-    loadRank();
-    $("status").textContent = "Conectado. Carregando músicas...";
-    readLoop(port);
-    setTimeout(function () { send("L"); send("W" + $("vol").value); }, 1500);
+    applyState(await api("/api/estado"));
+    setConnected(true);
   } catch (e) {
-    $("status").textContent = "Não foi possível conectar (a porta pode estar aberta no Serial Monitor).";
+    setConnected(false);
   }
-};
+}
+
+async function command(path) {
+  try {
+    applyState(await api(path, true));
+    setConnected(true);
+  } catch (e) {
+    setConnected(false);
+  }
+}
+
+async function start() {
+  try {
+    var list = await api("/api/musicas");
+    list.forEach(function (name, i) { names[i] = name; });
+    renderList();
+    var s = await api("/api/estado");
+    $("vol").value = s.volume;
+    $("volVal").textContent = s.volume + "%";
+    connected = true;
+    applyState(s);
+  } catch (e) {
+    $("status").textContent = "Sem conexão com a placa. Tentando de novo...";
+    setTimeout(start, 2000);
+    return;
+  }
+  loadRank();
+  setInterval(pollState, 500);
+}
 
 $("vol").oninput = function () {
-  $("volVal").textContent = this.value + "%";
-  send("W" + this.value);
+  var value = this.value;
+  $("volVal").textContent = value + "%";
+  if (volumeTimer) return;
+  volumeTimer = setTimeout(function () {
+    volumeTimer = null;
+    command("/api/volume?v=" + $("vol").value);
+  }, 150);
 };
 
-$("play").onclick = function () { if (selected >= 0) send("T" + selected); };
-$("pause").onclick = function () { send("P"); };
+$("play").onclick = function () { if (selected >= 0) command("/api/tocar?n=" + selected); };
+$("pause").onclick = function () { command("/api/pausar"); };
 
 renderDancer();
+start();
 </script>
 </body>
 </html>
