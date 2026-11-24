@@ -69,5 +69,41 @@ Depois rode `pio run -t uploadfs` (não precisa regravar o firmware). A página 
 ## Testar sem a página
 No Serial Monitor, digite `L` (lista), `T0` (toca a música 0) ou `P` (pausa).
 
+## Como funciona
+- **Firmware** (C++, PlatformIO, Arduino): os 3 pinos ficam no mesmo canal PWM (LEDC, 2 kHz), que é o que faz o buzzer passivo soar. Ligar e desligar o som é só mudar o duty.
+- **Sem `delay()`**: o tempo de cada passo é controlado com `millis()` em `updatePlayer()`, chamado no `loop()`. A leitura do Serial também não bloqueia.
+- **Estados**: parado, tocando e pausado. Pausar guarda quanto do passo já passou, então Começar continua do mesmo ponto. Ao terminar o padrão, a música recomeça em loop.
+- **Músicas**: lidas do LittleFS. A lista é montada na inicialização (ordem alfabética) e o conteúdo só é lido quando a música toca.
+- **Página**: um único arquivo HTML/CSS/JS puro, sem bibliotecas, frameworks ou CDNs. A única rede usada é o `fetch` ao Firebase, para o ranking.
+
+## Protocolo serial (115200 baud, uma linha por mensagem)
+
+| Direção | Mensagem | Significado |
+|---|---|---|
+| PC → ESP32 | `L` | Pede a lista de músicas |
+| PC → ESP32 | `T<n>` | Toca a música `n` (se estava pausada, continua; outra música começa do início) |
+| PC → ESP32 | `P` | Pausa e guarda a posição |
+| PC → ESP32 | `W<n>` | Volume de 0 a 100 |
+| ESP32 → PC | `M<n>:<nome>` | Uma música da lista |
+| ESP32 → PC | `S:tocando:<n>`, `S:pausado:<n>`, `S:parado` | Estado atual, enviado após cada comando |
+| ESP32 → PC | `C:<n>` | A música `n` completou um ciclo (a página soma +1 no ranking) |
+
+Linhas desconhecidas são ignoradas dos dois lados. Se mudar o protocolo, altere o firmware e a página juntos.
+
+## Regras do projeto
+- Prioridade: simplicidade. Não acrescentar recursos nem dependências que não foram pedidos.
+- Firmware sem Wi-Fi e sem servidor; página sem bibliotecas externas.
+- `src/main.cpp` não leva comentários `//`.
+- Não trocar o hardware sem autorização.
+- Não afirmar que o hardware foi testado sem acesso físico à placa.
+
+## Testes manuais
+- [ ] `pio run` compila e `pio run -t upload` envia o firmware.
+- [ ] A página conecta e lista as 4 músicas.
+- [ ] Começar toca a música selecionada nos 3 buzzers.
+- [ ] Pausar silencia; Começar continua do mesmo ponto.
+- [ ] Escolher outra música e Começar troca e começa do início.
+- [ ] Desconectar o cabo mostra "Desconectado" sem travar a página.
+
 ## Limitações
 Todas as músicas usam o mesmo tom (`TONE_HZ`): só variam a duração de sons e pausas. Os padrões são ritmos inspirados nas músicas, **não** reproduções fiéis. Compilar não prova que o buzzer funciona; é preciso testar na placa.
